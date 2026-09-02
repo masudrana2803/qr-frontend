@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QR Code Tracker Admin</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 20px; background: #f4f6f8; color: #333; }
+    .container { max-width: 1100px; margin: 0 auto; }
+    h1 { margin-bottom: 20px; }
+    .metrics { display: flex; gap: 20px; margin-bottom: 30px; }
+    .card { background: #fff; padding: 20px; border-radius: 8px; flex: 1; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    .card h3 { margin: 0 0 10px 0; color: #666; font-size: 14px; text-transform: uppercase; }
+    .card .value { font-size: 28px; font-weight: bold; }
+    .alert-val { color: #d9534f; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 30px; }
+    th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #edf2f7; }
+    th { background: #f8fafc; font-weight: 600; }
+    .status { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+    .status-VALID { background: #e6fffa; color: #234e52; }
+    .status-THRESHOLD_EXCEEDED { background: #fff5f5; color: #9b2c2c; }
+    .status-GEO_MISMATCH { background: #feebc8; color: #744210; }
+    .btn { display: inline-block; padding: 10px 16px; background: #3182ce; color: #fff; text-decoration: none; border-radius: 6px; font-weight: bold; }
+    .btn:hover { background: #2b6cb0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <h1>QR Code Security Dashboard</h1>
+      <a href="/api/export-csv" class="btn">Export CSV Log</a>
+    </div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin: 20px 0; gap: 16px; flex-wrap: wrap;">
+      <h2 style="margin: 0;">Create New QR Code</h2>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button type="button" class="btn" onclick="window.location.href='/'">Home</button>
+        <button type="button" class="btn" style="background:#e53e3e;" onclick="window.location.href='/logout'">Logout</button>
+      </div>
+    </div>
+
+    <form id="qrForm" style="background:#fff; padding:20px; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,0.05); margin-bottom:30px;">
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+        <div>
+          <label for="codeId">QR Code ID</label><br>
+          <input id="codeId" name="codeId" required style="width:100%; padding:10px; margin-top:6px; border:1px solid #cbd5e0; border-radius:6px;">
+        </div>
+        <div>
+          <label for="productName">Product Name</label><br>
+          <input id="productName" name="productName" required style="width:100%; padding:10px; margin-top:6px; border:1px solid #cbd5e0; border-radius:6px;">
+        </div>
+        <div>
+          <label for="destinationUrl">Destination URL</label><br>
+          <input id="destinationUrl" name="destinationUrl" type="url" required style="width:100%; padding:10px; margin-top:6px; border:1px solid #cbd5e0; border-radius:6px;">
+        </div>
+        <div>
+          <label for="maxScanThreshold">Max Scan Threshold</label><br>
+          <input id="maxScanThreshold" name="maxScanThreshold" type="number" min="1" value="5" style="width:100%; padding:10px; margin-top:6px; border:1px solid #cbd5e0; border-radius:6px;">
+        </div>
+        <div>
+          <label for="allowedCountries">Allowed Countries</label><br>
+          <input id="allowedCountries" name="allowedCountries" placeholder="US,BD,CA" style="width:100%; padding:10px; margin-top:6px; border:1px solid #cbd5e0; border-radius:6px;">
+        </div>
+      </div>
+      <div style="margin-top:16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+        <button type="submit" class="btn">Create QR Code</button>
+        <span id="createStatus" style="color:#2d3748;"></span>
+      </div>
+    </form>
+
+    <div class="metrics">
+      <div class="card">
+        <h3>Active QR Codes</h3>
+        <div class="value" id="totalQrs">0</div>
+      </div>
+      <div class="card">
+        <h3>Total Scans</h3>
+        <div class="value" id="totalScans">0</div>
+      </div>
+      <div class="card">
+        <h3>Flagged / Counterfeit Alerts</h3>
+        <div class="value alert-val" id="suspiciousScans">0</div>
+      </div>
+    </div>
+
+    <h2>Generated QR Codes</h2>
+    <div id="qrGallery" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:20px; margin-bottom:30px;"></div>
+
+    <h2>Recent Scan Activity</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>QR ID</th>
+          <th>IP Address</th>
+          <th>Location</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="logsTable">
+        <tr><td colspan="5">Loading analytics...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+  <script>
+    const qrGallery = document.getElementById('qrGallery');
+
+    function renderQrGallery(qrs) {
+      if (!qrGallery) return;
+
+      if (!qrs || qrs.length === 0) {
+        qrGallery.innerHTML = '<div style="background:#fff; padding:20px; border-radius:8px; box-shadow:0 2px 4px rgba(0,0,0,0.05);">No QR codes created yet.</div>';
+        return;
+      }
+
+      qrGallery.innerHTML = '';
+
+      qrs.forEach((qr) => {
+        const card = document.createElement('div');
+        card.style.background = '#fff';
+        card.style.padding = '16px';
+        card.style.borderRadius = '8px';
+        card.style.boxShadow = '0 2px 4px rgba(0,0,0,0.05)';
+        card.style.textAlign = 'center';
+
+        const trackingUrl = `${location.origin}/scan/${qr.codeId}`;
+        const img = document.createElement('img');
+        img.alt = qr.productName;
+        img.style.width = '180px';
+        img.style.height = '180px';
+        img.style.display = 'block';
+        img.style.margin = '0 auto 12px auto';
+        img.style.border = '1px solid #edf2f7';
+        img.style.padding = '8px';
+        img.style.borderRadius = '8px';
+
+        const savedQrData = qr.qrImageBase64 ? `data:image/png;base64,${qr.qrImageBase64}` : '';
+        if (savedQrData) {
+          img.src = savedQrData;
+        } else if (window.QRCode) {
+          QRCode.toDataURL(trackingUrl, { width: 180 }, function (err, url) {
+            if (!err) img.src = url;
+          });
+        }
+
+        const title = document.createElement('div');
+        title.textContent = qr.productName;
+        title.style.fontWeight = '700';
+        title.style.marginBottom = '8px';
+
+        const idLabel = document.createElement('div');
+        idLabel.textContent = `ID: ${qr.codeId}`;
+        idLabel.style.fontSize = '12px';
+        idLabel.style.color = '#4a5568';
+        idLabel.style.marginBottom = '8px';
+
+        const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.gap = '8px';
+        actions.style.justifyContent = 'center';
+        actions.style.flexWrap = 'wrap';
+        actions.style.marginTop = '12px';
+
+        const previewBtn = document.createElement('button');
+        previewBtn.type = 'button';
+        previewBtn.textContent = 'Preview QR';
+        previewBtn.style.padding = '8px 12px';
+        previewBtn.style.background = '#2d3748';
+        previewBtn.style.color = '#fff';
+        previewBtn.style.border = 'none';
+        previewBtn.style.borderRadius = '6px';
+        previewBtn.style.cursor = 'pointer';
+        previewBtn.onclick = () => {
+          const previewWindow = window.open('', '_blank', 'width=420,height=420');
+          previewWindow.document.write(`
+            <html>
+              <body style="font-family:sans-serif; display:flex; align-items:center; justify-content:center; flex-direction:column; gap:12px; padding:20px; text-align:center;">
+                <h3>${qr.productName}</h3>
+                <img src="${img.src || ''}" alt="${qr.productName}" style="width:260px; height:260px; border:1px solid #ddd; padding:10px; border-radius:8px;" />
+                <div>Tracking URL: ${trackingUrl}</div>
+              </body>
+            </html>
+          `);
+        };
+
+        const downloadBtn = document.createElement('a');
+        downloadBtn.href = img.src || trackingUrl;
+        downloadBtn.download = `${qr.codeId}.png`;
+        downloadBtn.textContent = 'Download QR';
+        downloadBtn.style.padding = '8px 12px';
+        downloadBtn.style.background = '#3182ce';
+        downloadBtn.style.color = '#fff';
+        downloadBtn.style.borderRadius = '6px';
+        downloadBtn.style.textDecoration = 'none';
+        downloadBtn.style.display = 'inline-block';
+
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.textContent = 'Delete QR';
+        deleteBtn.style.padding = '8px 12px';
+        deleteBtn.style.background = '#e53e3e';
+        deleteBtn.style.color = '#fff';
+        deleteBtn.style.border = 'none';
+        deleteBtn.style.borderRadius = '6px';
+        deleteBtn.style.cursor = 'pointer';
+        deleteBtn.onclick = async () => {
+          if (!confirm(`Delete QR code: ${qr.codeId}?`)) return;
+
+          try {
+            const response = await fetch(`/delete/${qr.codeId}`, { method: 'DELETE' });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Delete failed');
+            fetchAnalytics();
+          } catch (error) {
+            alert(error.message);
+          }
+        };
+
+        const openLink = document.createElement('a');
+        openLink.href = trackingUrl;
+        openLink.target = '_blank';
+        openLink.rel = 'noopener';
+        openLink.textContent = 'Open link';
+        openLink.style.display = 'inline-block';
+        openLink.style.marginTop = '10px';
+        openLink.style.color = '#3182ce';
+        openLink.style.textDecoration = 'none';
+
+        card.appendChild(title);
+        card.appendChild(idLabel);
+        card.appendChild(img);
+        actions.appendChild(previewBtn);
+        actions.appendChild(downloadBtn);
+        actions.appendChild(deleteBtn);
+        card.appendChild(actions);
+        card.appendChild(openLink);
+
+        qrGallery.appendChild(card);
+      });
+    }
+
+    async function fetchAnalytics() {
+      try {
+        const res = await fetch('/api/analytics');
+        if (!res.ok) throw new Error('Unauthorized');
+        const data = await res.json();
+
+        document.getElementById('totalQrs').innerText = data.summary.totalQrs;
+        document.getElementById('totalScans').innerText = data.summary.totalScans;
+        document.getElementById('suspiciousScans').innerText = data.summary.suspiciousScans;
+        renderQrGallery(data.qrs || []);
+
+        const tableBody = document.getElementById('logsTable');
+        tableBody.innerHTML = '';
+
+        if (data.recentLogs.length === 0) {
+          tableBody.innerHTML = '<tr><td colspan="5">No scan activity recorded yet.</td></tr>';
+          return;
+        }
+
+        data.recentLogs.forEach(log => {
+          const row = document.createElement('tr');
+          const time = new Date(log.scannedAt).toLocaleString();
+          row.innerHTML = `
+            <td>${time}</td>
+            <td><b>${log.qrCodeId}</b></td>
+            <td>${log.ipAddress}</td>
+            <td>${log.city}, ${log.country}</td>
+            <td><span class="status status-${log.status}">${log.status}</span></td>
+          `;
+          tableBody.appendChild(row);
+        });
+      } catch (err) {
+        console.error('Failed to load dashboard data:', err);
+      }
+    }
+
+    const qrForm = document.getElementById('qrForm');
+    const createStatus = document.getElementById('createStatus');
+
+    qrForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const formData = new FormData(qrForm);
+      const payload = Object.fromEntries(formData.entries());
+
+      try {
+        createStatus.textContent = 'Creating QR code...';
+        createStatus.style.color = '#2d3748';
+        const response = await fetch('/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to create QR code');
+        }
+
+        createStatus.textContent = 'QR code created successfully.';
+        qrForm.reset();
+        document.getElementById('maxScanThreshold').value = '5';
+        fetchAnalytics();
+      } catch (error) {
+        createStatus.textContent = error.message;
+        createStatus.style.color = '#d9534f';
+      }
+    });
+
+    fetchAnalytics();
+    setInterval(fetchAnalytics, 10000);
+  </script>
+</body>
+</html>

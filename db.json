@@ -1,0 +1,15 @@
+{
+  "qrs": [
+    {
+      "codeId": "132213",
+      "productName": "affd",
+      "destinationUrl": "https://qr-tracker-zeta-sable.vercel.app/",
+      "maxScanThreshold": 5,
+      "allowedCountries": [
+        "BD"
+      ],
+      "createdAt": "2026-09-02T05:49:32.457Z"
+    }
+  ],
+  "logs": []
+}
