@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 
-const defaultAdmin = {
-  username: 'admin',
-  password: 'admin123',
-};
+const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/$/, '');
+const TRACKING_URL = (import.meta.env.VITE_TRACKING_URL || API_URL).replace(/\/$/, '');
 
 const emptyForm = {
   codeId: '',
@@ -25,17 +23,26 @@ function App() {
   const [statusMessage, setStatusMessage] = useState('');
   const [statusType, setStatusType] = useState('');
   const [loading, setLoading] = useState(true);
+  const [analyticsError, setAnalyticsError] = useState('');
+
+  const apiFetch = (path, options = {}) => {
+    const credentials = localStorage.getItem('qrAdminCredentials');
+    const headers = new Headers(options.headers || {});
+    if (credentials) headers.set('Authorization', `Basic ${credentials}`);
+    return fetch(`${API_URL}${path}`, { ...options, headers });
+  };
 
   useEffect(() => {
     const session = localStorage.getItem('qrAdminAuth');
-    if (session === 'true') {
+    if (session === 'true' && localStorage.getItem('qrAdminCredentials')) {
       setIsAuthenticated(true);
     }
   }, []);
 
   const fetchAnalytics = async () => {
     try {
-      const res = await fetch('/api/analytics');
+      setAnalyticsError('');
+      const res = await apiFetch('/analytics');
       if (!res.ok) throw new Error('Unauthorized');
 
       const data = await res.json();
@@ -44,6 +51,7 @@ function App() {
       setLogs(data.recentLogs ?? []);
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
+      setAnalyticsError('Unable to connect to the QR backend. Make sure the backend is running and VITE_API_URL is correct.');
     } finally {
       setLoading(false);
     }
@@ -66,10 +74,9 @@ function App() {
     event.preventDefault();
 
     try {
-      const response = await fetch('/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(loginForm),
+      const credentials = btoa(`${loginForm.username}:${loginForm.password}`);
+      const response = await fetch(`${API_URL}/analytics`, {
+        headers: { Authorization: `Basic ${credentials}` },
       });
 
       const result = await response.json();
@@ -77,6 +84,7 @@ function App() {
         throw new Error(result.error || 'Invalid username or password.');
       }
 
+      localStorage.setItem('qrAdminCredentials', credentials);
       localStorage.setItem('qrAdminAuth', 'true');
       setLoginError('');
       setIsAuthenticated(true);
@@ -87,6 +95,7 @@ function App() {
 
   const handleLogout = () => {
     localStorage.removeItem('qrAdminAuth');
+    localStorage.removeItem('qrAdminCredentials');
     setIsAuthenticated(false);
     setLoginForm({ username: '', password: '' });
   };
@@ -103,7 +112,7 @@ function App() {
       setStatusMessage('Creating QR code...');
       setStatusType('info');
 
-      const response = await fetch('/api/create', {
+      const response = await apiFetch('/qrcodes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
@@ -124,11 +133,28 @@ function App() {
     }
   };
 
+  const downloadCsv = async () => {
+    try {
+      const response = await apiFetch('/export-csv');
+      if (!response.ok) throw new Error('Failed to export scan logs');
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'scan_logs.csv';
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      alert(error.message);
+    }
+  };
+
   const handleDelete = async (codeId) => {
     if (!window.confirm(`Delete QR code: ${codeId}?`)) return;
 
     try {
-      const response = await fetch(`/api/delete/${codeId}`, { method: 'DELETE' });
+      const response = await apiFetch(`/qrcodes/${encodeURIComponent(codeId)}`, { method: 'DELETE' });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Delete failed');
       fetchAnalytics();
@@ -143,7 +169,7 @@ function App() {
       return;
     }
 
-    const trackingUrl = `${window.location.origin}/scan/${qr.codeId}`;
+    const trackingUrl = `${TRACKING_URL}/qrcodes/${encodeURIComponent(qr.codeId)}/scan`;
     try {
       const dataUrl = await QRCode.toDataURL(trackingUrl, { width: 180 });
       setImageSrc(dataUrl);
@@ -153,7 +179,7 @@ function App() {
   };
 
   const openPreview = (qr, imageSrc) => {
-    const trackingUrl = `${window.location.origin}/scan/${qr.codeId}`;
+    const trackingUrl = `${TRACKING_URL}/qrcodes/${encodeURIComponent(qr.codeId)}/scan`;
     const previewWindow = window.open('', '_blank', 'width=420,height=420');
 
     if (!previewWindow) return;
@@ -215,7 +241,7 @@ function App() {
     <div className="container">
       <div className="page-header">
         <h1>QR Code Security Dashboard</h1>
-        <a href="/api/export-csv" className="btn">Export CSV Log</a>
+        <button type="button" className="btn" onClick={downloadCsv}>Export CSV Log</button>
       </div>
 
       <div className="toolbar" style={{ margin: '20px 0' }}>
@@ -306,9 +332,17 @@ function App() {
           </tr>
         </thead>
         <tbody>
-          {logs.length === 0 ? (
+          {loading ? (
             <tr>
               <td colSpan="5">Loading analytics...</td>
+            </tr>
+          ) : analyticsError ? (
+            <tr>
+              <td colSpan="5">{analyticsError}</td>
+            </tr>
+          ) : logs.length === 0 ? (
+            <tr>
+              <td colSpan="5">No scan activity recorded yet.</td>
             </tr>
           ) : (
             logs.map((log) => (
@@ -336,7 +370,7 @@ function QrCard({ qr, renderQrCode, openPreview, onDelete }) {
     renderQrCode(qr, setImageSrc);
   }, [qr, renderQrCode]);
 
-  const trackingUrl = `${window.location.origin}/scan/${qr.codeId}`;
+  const trackingUrl = `${TRACKING_URL}/qrcodes/${encodeURIComponent(qr.codeId)}/scan`;
 
   return (
     <div className="qr-card">

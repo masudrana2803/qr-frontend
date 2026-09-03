@@ -7,7 +7,11 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/qr_dashboard';
+const MONGODB_URI = process.env.MONGODB_URI;
+
+if (!MONGODB_URI) {
+  throw new Error('MONGODB_URI is required. Use the database configured in the QR backend project.');
+}
 const DEFAULT_ADMIN = {
   username: process.env.ADMIN_USERNAME || 'admin',
   password: process.env.ADMIN_PASSWORD || 'admin123',
