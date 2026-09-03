@@ -210,7 +210,8 @@ function App() {
               type="text"
               value={loginForm.username}
               onChange={handleLoginChange}
-              placeholder="admin"
+              placeholder="give user name"
+              // admin
               autoComplete="username"
             />
           </div>
@@ -223,7 +224,8 @@ function App() {
               type="password"
               value={loginForm.password}
               onChange={handleLoginChange}
-              placeholder="admin123"
+              placeholder="give password"
+              // Give password: sUper
               autoComplete="current-password"
             />
           </div>
