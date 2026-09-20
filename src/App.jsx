@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
 
-const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/$/, '');
-const TRACKING_URL = (import.meta.env.VITE_TRACKING_URL || API_URL).replace(/\/$/, '');
+const normalizeApiUrl = (value) => {
+  const url = value.replace(/\/$/, '');
+  return url.endsWith('/api') ? url : `${url}/api`;
+};
+
+const API_URL = normalizeApiUrl(import.meta.env.VITE_API_URL || 'http://localhost:5000');
+const TRACKING_URL = normalizeApiUrl(import.meta.env.VITE_TRACKING_URL || API_URL);
 
 const emptyForm = {
   codeId: '',
