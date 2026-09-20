@@ -13,4 +13,7 @@ export default defineConfig({
       },
     },
   },
+  preview: {
+    allowedHosts: ['qr-frontend-o0tp.onrender.com'],
+  },
 });
